@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Web A - Mã hóa, gửi và nhận file</title>
+  <style>
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: url('https://images.unsplash.com/photo-1497493292307-31c376b6e479?auto=format&fit=crop&w=1470&q=80') no-repeat center center fixed;
+      background-size: cover;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #eee;
+      overflow: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(0, 102, 204, 0.35);
+      z-index: 0;
+    }
+    .card {
+      position: relative;
+      z-index: 1;
+      background: rgba(20, 20, 50, 0.85);
+      border: 3px solid #0099ff;
+      border-radius: 20px;
+      width: 400px;
+      padding: 35px 30px;
+      box-shadow: 0 0 30px #0099ff;
+      box-sizing: border-box;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      user-select: none;
+    }
+    h2 {
+      margin: 0 0 20px 0;
+      font-weight: 800;
+      font-size: 1.7rem;
+      color: #66b3ff;
+    }
+    input[type="file"],
+    input[type="text"],
+    select {
+      width: 100%;
+      padding: 14px 12px;
+      border-radius: 12px;
+      border: none;
+      font-size: 1rem;
+      outline: none;
+      background-color: #222;
+      color: #eee;
+      box-sizing: border-box;
+      cursor: pointer;
+    }
+    input[type="text"] {
+      cursor: text;
+    }
+    button {
+      width: 100%;
+      padding: 14px 0;
+      border: none;
+      border-radius: 12px;
+      background: #0099ff;
+      font-weight: 700;
+      color: #222;
+      cursor: pointer;
+      font-size: 1.15rem;
+      transition: background-color 0.3s ease;
+      box-sizing: border-box;
+    }
+    button:hover:not(:disabled) {
+      background-color: #007acc;
+      color: #111;
+    }
+    button:disabled {
+      background-color: #66b3ff99;
+      cursor: not-allowed;
+    }
+    #statusA {
+      min-height: 1.5em;
+      font-weight: 700;
+      margin-top: 10px;
+      color: #66b3ff;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Web A - Mã hóa & gửi file</h2>
+
+    <input type="file" id="fileInputA" />
+    <input type="text" id="keyInputA" placeholder="Nhập khóa AES" />
+    <button id="sendBtnA" disabled>Mã hóa và gửi (Web A → Server)</button>
+
+    <h3>Danh sách file từ Web B</h3>
+    <select id="fileListB" size="5" style="height: 120px;"></select>
+    <button id="downloadBtnA" disabled>Tải và giải mã file đã chọn</button>
+
+    <p id="statusA"></p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script>
+    const wsA = new WebSocket("ws://localhost:8080");
+    const statusA = document.getElementById("statusA");
+    const sendBtnA = document.getElementById("sendBtnA");
+    const downloadBtnA = document.getElementById("downloadBtnA");
+    const fileListB = document.getElementById("fileListB");
+
+    const CHUNK_SIZE = 512 * 1024; // 512KB
+
+    wsA.onopen = () => {
+      statusA.textContent = "✅ Kết nối WebSocket thành công.";
+      sendBtnA.disabled = false;
+      fetchFileListB();
+    };
+
+    wsA.onerror = () => {
+      statusA.textContent = "❌ Lỗi kết nối WebSocket.";
+      sendBtnA.disabled = true;
+      downloadBtnA.disabled = true;
+    };
+
+    wsA.onclose = () => {
+      statusA.textContent = "⚠️ Kết nối bị đóng.";
+      sendBtnA.disabled = true;
+      downloadBtnA.disabled = true;
+    };
+
+    wsA.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.status === "file_received_A") {
+        statusA.textContent = "✅ Server đã nhận file mã hóa từ Web A.";
+      } else if (data.status === "list_files_B") {
+        updateFileList(fileListB, data.files);
+      } else if (data.status === "file_ready_B") {
+        statusA.textContent = "📥 Đã nhận file từ Web B, đang giải mã...";
+        decryptAndDownload(data.file, data.filename);
+      } else if (data.status === "no_file_B") {
+        statusA.textContent = "⚠️ Không tìm thấy file trên server.";
+      }
+    };
+
+    sendBtnA.onclick = () => {
+      const fileInput = document.getElementById("fileInputA");
+      const key = document.getElementById("keyInputA").value.trim();
+
+      if (!fileInput.files.length) return alert("Vui lòng chọn file");
+      if (!key) return alert("Vui lòng nhập khóa");
+
+      const file = fileInput.files[0];
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      let currentChunk = 0;
+
+      statusA.textContent = `⏳ Đang mã hóa và gửi ${totalChunks} phần...`;
+
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        const wordArray = CryptoJS.lib.WordArray.create(e.target.result);
+        const encrypted = CryptoJS.AES.encrypt(wordArray, key).toString();
+
+        const msg = {
+          action: "send_encrypted_A",
+          fileData: encrypted,
+          filename: file.name,
+          source: "A"
+        };
+        wsA.send(JSON.stringify(msg));
+
+        currentChunk++;
+        if (currentChunk < totalChunks) {
+          readNextChunk();
+        } else {
+          statusA.textContent = "✅ Đã gửi toàn bộ file lên server.";
+        }
+      };
+
+      function readNextChunk() {
+        const start = currentChunk * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        const blob = file.slice(start, end);
+        reader.readAsArrayBuffer(blob);
+      }
+
+      readNextChunk();
+    };
+
+    downloadBtnA.onclick = () => {
+      const selectedFile = fileListB.value;
+      if (!selectedFile) return alert("Vui lòng chọn file từ danh sách");
+      const key = document.getElementById("keyInputA").value.trim();
+      if (!key) return alert("Vui lòng nhập khóa để giải mã");
+
+      wsA.send(JSON.stringify({
+        action: "request_file_B",
+        filename: selectedFile
+      }));
+      statusA.textContent = "⏳ Đang yêu cầu file từ server...";
+    };
+
+    function fetchFileListB() {
+      if (wsA.readyState === WebSocket.OPEN) {
+        wsA.send(JSON.stringify({ action: "list_files_B" }));
+      }
+    }
+
+    function updateFileList(selectElem, files) {
+      selectElem.innerHTML = "";
+      if (files.length === 0) {
+        const opt = document.createElement("option");
+        opt.textContent = "Chưa có file nào";
+        opt.disabled = true;
+        selectElem.appendChild(opt);
+      } else {
+        for (const f of files) {
+          const opt = document.createElement("option");
+          opt.value = f;
+          opt.textContent = f;
+          selectElem.appendChild(opt);
+        }
+      }
+      downloadBtnA.disabled = files.length === 0;
+    }
+
+    function convertWordArrayToUint8Array(wordArray) {
+      const len = wordArray.sigBytes;
+      const words = wordArray.words;
+      const u8 = new Uint8Array(len);
+      let idx = 0;
+      for (let i = 0; i < words.length; i++) {
+        let word = words[i];
+        for (let j = 3; j >= 0; j--) {
+          if (idx < len) {
+            u8[idx++] = (word >> (8 * j)) & 0xff;
+          }
+        }
+      }
+      return u8;
+    }
+
+    function decryptAndDownload(encrypted, filename) {
+      const key = document.getElementById("keyInputA").value.trim();
+      try {
+        const decrypted = CryptoJS.AES.decrypt(encrypted, key);
+        const uint8Arr = convertWordArrayToUint8Array(decrypted);
+        const blob = new Blob([uint8Arr]);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        statusA.textContent = "✅ File đã giải mã và tải về.";
+      } catch (e) {
+        statusA.textContent = "❌ Giải mã thất bại: khóa sai hoặc file lỗi.";
+      }
+    }
+  </script>
+</body>
+</html>

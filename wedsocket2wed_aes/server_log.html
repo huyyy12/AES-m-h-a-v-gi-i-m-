@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Server Log - Quản lý file upload</title>
+  <style>
+    /* Nền ảnh mờ */
+    #fire-bg {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: url('https://dainam.edu.vn/uploads/images/jcp8yed1xqhwpu9j6hf520240528065111_thump.jpg') no-repeat center center/cover;
+      filter: blur(1px);
+      opacity: 0.99;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 30px auto;
+      background: rgba(245, 243, 243, 0.5); /* giảm opacity nền */
+      border-radius: 20px;
+      padding: 25px 30px;
+      box-shadow:
+        0 0 10px 1.5px rgba(255, 69, 0, 0.3),
+        inset 0 0 6px 1px rgba(255, 140, 0, 0.25);
+      backdrop-filter: blur(8px);
+      border: 2px solid rgba(255, 69, 0, 0.35);
+      animation: glowPulse 3s infinite alternate ease-in-out;
+      color: #333;
+      font-family: Arial, sans-serif;
+    }
+
+    @keyframes glowPulse {
+      0% {
+        box-shadow:
+          0 0 5px 0.5px rgba(255, 69, 0, 0.2),
+          inset 0 0 3px 0.5px rgba(255, 140, 0, 0.2);
+        border-color: rgba(255, 69, 0, 0.25);
+      }
+      100% {
+        box-shadow:
+          0 0 12px 3px rgba(255, 69, 0, 0.5),
+          inset 0 0 10px 3px rgba(255, 140, 0, 0.4);
+        border-color: rgba(255, 69, 0, 0.5);
+      }
+    }
+
+    h1 {
+      text-align: center;
+      color: #cc3300;
+      margin-bottom: 15px;
+      text-shadow: 0 0 10px #ff5500;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: #fff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 10px rgba(255, 69, 0, 0.5);
+    }
+
+    th, td {
+      padding: 12px 15px;
+      border-bottom: 1px solid #eee;
+      text-align: left;
+    }
+
+    th {
+      background: linear-gradient(90deg, #ff6a00, #ee0979);
+      color: white;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+
+    tr:hover {
+      background-color: #ffe5d1;
+    }
+
+    #refresh {
+      margin: 15px auto 0 auto;
+      display: block;
+      padding: 12px 30px;
+      font-weight: bold;
+      background: linear-gradient(90deg, #ff6a00, #ee0979);
+      border: none;
+      color: white;
+      cursor: pointer;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      box-shadow: 0 0 10px #ff6a00;
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    #refresh:hover {
+      background: linear-gradient(90deg, #ee0979, #ff6a00);
+      box-shadow: 0 0 15px #ee0979;
+    }
+
+    /* Form tìm kiếm bên trong container */
+    #searchForm {
+      margin-bottom: 15px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+      font-weight: bold;
+      color: #cc3300;
+    }
+    #searchForm label {
+      margin-right: 5px;
+      white-space: nowrap;
+    }
+    #searchForm input {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 2px solid #ff6a00;
+      font-size: 1rem;
+      min-width: 110px;
+    }
+    #searchForm button {
+      padding: 8px 20px;
+      border-radius: 12px;
+      background: linear-gradient(90deg, #ff6a00, #ee0979);
+      border: none;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 0 8px #ff6a00;
+      font-weight: 700;
+      font-size: 1rem;
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+      min-width: 80px;
+    }
+    #searchForm button:hover {
+      background: linear-gradient(90deg, #ee0979, #ff6a00);
+      box-shadow: 0 0 12px #ee0979;
+    }
+
+  </style>
+</head>
+<body>
+
+  <div id="fire-bg"></div>
+
+  <div class="container">
+    <h1>Lịch sử Upload từ Web A và B</h1>
+
+    <!-- Form tìm kiếm bên trong container -->
+    <form id="searchForm" onsubmit="return false;">
+      <label for="searchDate">Ngày:</label>
+      <input type="date" id="searchDate" />
+
+      <label for="timeFrom">Từ giờ:</label>
+      <input type="time" id="timeFrom" />
+
+      <label for="timeTo">Đến giờ:</label>
+      <input type="time" id="timeTo" />
+
+      <button id="searchBtn">Tìm</button>
+      <button id="clearBtn" type="button">Xóa</button>
+    </form>
+
+    <button id="refresh">Làm mới danh sách</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Người gửi</th>
+          <th>Tên file</th>
+          <th>Thời gian gửi</th>
+        </tr>
+      </thead>
+      <tbody id="logTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const ws = new WebSocket("ws://localhost:8080");
+    const tbody = document.getElementById("logTable");
+    const refreshBtn = document.getElementById("refresh");
+
+    const searchDate = document.getElementById("searchDate");
+    const timeFrom = document.getElementById("timeFrom");
+    const timeTo = document.getElementById("timeTo");
+    const searchBtn = document.getElementById("searchBtn");
+    const clearBtn = document.getElementById("clearBtn");
+
+    let logData = [];
+
+    function loadLog() {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "get_upload_log" }));
+      }
+    }
+
+    function renderLog(data) {
+      tbody.innerHTML = "";
+      data.forEach(entry => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${entry.source}</td>
+          <td>${entry.filename}</td>
+          <td>${entry.timestamp}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function filterLog() {
+      const selectedDate = searchDate.value;
+      const fromTime = timeFrom.value;
+      const toTime = timeTo.value;
+
+      if (!selectedDate && !fromTime && !toTime) {
+        renderLog(logData);
+        return;
+      }
+
+      const filtered = logData.filter(entry => {
+        const datetime = entry.timestamp;
+        if (!datetime) return false;
+
+        const [datePart, timePart] = datetime.split(' ');
+        if (selectedDate && datePart !== selectedDate) return false;
+
+        if (fromTime && toTime) {
+          const hhmm = timePart ? timePart.substring(0,5) : '';
+          if (hhmm < fromTime || hhmm > toTime) return false;
+        } else if (fromTime) {
+          const hhmm = timePart ? timePart.substring(0,5) : '';
+          if (hhmm < fromTime) return false;
+        } else if (toTime) {
+          const hhmm = timePart ? timePart.substring(0,5) : '';
+          if (hhmm > toTime) return false;
+        }
+
+        return true;
+      });
+
+      renderLog(filtered);
+    }
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.status === "upload_log") {
+        logData = data.log;
+        renderLog(logData);
+      }
+    };
+
+    ws.onopen = loadLog;
+
+    refreshBtn.onclick = () => {
+      loadLog();
+      searchDate.value = '';
+      timeFrom.value = '';
+      timeTo.value = '';
+    };
+
+    searchBtn.onclick = filterLog;
+    clearBtn.onclick = () => {
+      searchDate.value = '';
+      timeFrom.value = '';
+      timeTo.value = '';
+      renderLog(logData);
+    };
+  </script>
+
+</body>
+</html>
