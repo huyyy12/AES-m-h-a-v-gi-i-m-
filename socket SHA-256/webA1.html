@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Web A - Gửi file + SHA-256</title>
+  <style>
+    @keyframes borderShift {
+      0% {
+        border-color: #6dd5fa;
+        box-shadow: 0 0 20px #6dd5fa;
+      }
+      50% {
+        border-color: #2980b9;
+        box-shadow: 0 0 40px #2980b9;
+      }
+      100% {
+        border-color: #6dd5fa;
+        box-shadow: 0 0 20px #6dd5fa;
+      }
+    }
+
+    body {
+      background: linear-gradient(135deg, #0a0808, #204d5e, #ffffff);
+      height: 100vh;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .container {
+      background: #fff;
+      border-radius: 16px;
+      padding: 30px;
+      max-width: 450px;
+      width: 100%;
+      text-align: center;
+      border: 6px solid #6dd5fa;
+      animation: borderShift 4s infinite ease-in-out;
+      box-shadow: 0 0 20px #6dd5fa;
+    }
+    h2 {
+      margin-bottom: 25px;
+      color: #34495e;
+    }
+    #fileHash {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #34495e;
+      background: #ecf0f1;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: monospace;
+      white-space: break-spaces;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      max-width: 100%;
+      user-select: all;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #2ecc71;
+      min-height: 24px;
+    }
+    button {
+      margin-top: 15px;
+      background: #2980b9;
+      border: none;
+      color: white;
+      font-weight: bold;
+      padding: 10px 18px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #6dd5fa;
+    }
+    input[type="file"] {
+      cursor: pointer;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Web A - Gửi file & SHA-256</h2>
+    <input type="file" id="fileInput" />
+    <br />
+    <button id="sendBtn">Gửi file</button>
+    <div id="status"></div>
+    <div id="fileHash"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script>
+    const ws = new WebSocket("ws://localhost:8080");
+    const fileInput = document.getElementById("fileInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const status = document.getElementById("status");
+    const fileHashDiv = document.getElementById("fileHash");
+
+    ws.onopen = () => {
+      status.textContent = "✅ Đã kết nối WebSocket.";
+    };
+
+    ws.onerror = () => {
+      status.textContent = "❌ Lỗi kết nối WebSocket.";
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if(data.status === "file_received_A"){
+        status.textContent = "✅ Server đã nhận file.";
+      }
+    };
+
+    sendBtn.onclick = () => {
+      const file = fileInput.files[0];
+      if(!file){
+        alert("Chọn file trước đã");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function(e){
+        const bytes = new Uint8Array(e.target.result);
+        // Tính SHA-256
+        const wordArray = CryptoJS.lib.WordArray.create(bytes);
+        const hash = CryptoJS.SHA256(wordArray).toString();
+        fileHashDiv.textContent = "SHA-256 của file: " + hash;
+
+        // Chuyển file sang base64 để gửi
+        let binary = '';
+        for(let b of bytes){
+          binary += String.fromCharCode(b);
+        }
+        const base64Data = btoa(binary);
+
+        // Gửi qua websocket
+        ws.send(JSON.stringify({
+          action: "send_file_A",
+          filename: file.name,
+          fileData: base64Data,
+          fileHash: hash
+        }));
+
+        status.textContent = "📤 Đang gửi file...";
+      };
+      reader.readAsArrayBuffer(file);
+    };
+  </script>
+</body>
+</html>

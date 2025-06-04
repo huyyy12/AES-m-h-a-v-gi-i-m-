@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Web B - Nhận file và kiểm tra tính toàn vẹn</title>
+  <style>
+    @keyframes borderShift {
+      0% {
+        border-color: #463a25;
+        box-shadow: 0 0 20px #f39c12;
+      }
+      50% {
+        border-color: #d35400;
+        box-shadow: 0 0 40px #d35400;
+      }
+      100% {
+        border-color: #f39c12;
+        box-shadow: 0 0 20px #f39c12;
+      }
+    }
+
+    body {
+      background: linear-gradient(135deg, #0c0a07, #41413b, #ffffff);
+      height: 100vh;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .container {
+      background: #fff;
+      border-radius: 16px;
+      padding: 30px;
+      max-width: 450px;
+      width: 100%;
+      text-align: center;
+      border: 6px solid #181614;
+      animation: borderShift 4s infinite ease-in-out;
+      box-shadow: 0 0 20px #f39c12;
+    }
+    h2 {
+      margin-bottom: 25px;
+      color: #7f4f01;
+    }
+    #fileHash, #checkResult {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #7f4f01;
+      background: #fef9e7;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: monospace;
+      white-space: break-spaces;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      max-width: 100%;
+      user-select: all;
+    }
+    #status {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #27ae60;
+      min-height: 24px;
+    }
+    #downloadLink {
+      display: none;
+      margin-top: 15px;
+      font-weight: bold;
+      color: #e67e22;
+      text-decoration: none;
+      background: #f39c12;
+      padding: 10px 15px;
+      border-radius: 10px;
+      display: inline-block;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    #downloadLink:hover {
+      background: #d35400;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Web B - Nhận file và kiểm tra tính toàn vẹn</h2>
+    <div id="status">Chưa nhận file</div>
+    <a id="downloadLink">Tải file</a>
+    <div id="fileHash"></div>
+    <div id="checkResult"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script>
+    const ws = new WebSocket("ws://localhost:8080");
+    const status = document.getElementById("status");
+    const downloadLink = document.getElementById("downloadLink");
+    const fileHashDiv = document.getElementById("fileHash");
+    const checkResult = document.getElementById("checkResult");
+
+    ws.onopen = () => {
+      status.textContent = "✅ Đã kết nối WebSocket.";
+    };
+
+    ws.onerror = () => {
+      status.textContent = "❌ Lỗi kết nối WebSocket.";
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if(data.status === "file_from_A"){
+        status.textContent = `📥 Đã nhận file: ${data.filename}`;
+        fileHashDiv.textContent = "SHA-256 gửi từ Web A: " + data.fileHash;
+
+        // Giải base64 về mảng bytes
+        const binaryStr = atob(data.fileData);
+        const len = binaryStr.length;
+        const bytes = new Uint8Array(len);
+        for(let i=0; i<len; i++){
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+
+        // Tính SHA-256 file nhận được
+        const wordArray = CryptoJS.lib.WordArray.create(bytes);
+        const hash = CryptoJS.SHA256(wordArray).toString();
+
+        checkResult.textContent = "SHA-256 tính lại: " + hash;
+
+        if(hash === data.fileHash){
+          checkResult.style.color = "lime";
+          checkResult.textContent += " ✔️ Tính toàn vẹn dữ liệu đúng!";
+        } else {
+          checkResult.style.color = "red";
+          checkResult.textContent += " ❌ Dữ liệu bị thay đổi!";
+        }
+
+        // Tạo link tải file
+        const blob = new Blob([bytes]);
+        const url = URL.createObjectURL(blob);
+        downloadLink.href = url;
+        downloadLink.download = data.filename;
+        downloadLink.textContent = "⬇️ Tải file " + data.filename;
+        downloadLink.style.display = "inline-block";
+      }
+    };
+  </script>
+</body>
+</html>
