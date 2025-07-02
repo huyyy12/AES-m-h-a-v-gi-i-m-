@@ -1,0 +1,28 @@
+<!-- client_a/templates/download.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tải file từ Client B</title>
+</head>
+<body>
+    <h2>📥 Tải file đã gửi</h2>
+    <form action="/download" method="POST">
+        <div>
+            <label for="filename">Tên file:</label>
+            <input type="text" name="filename" required>
+        </div>
+        <button type="submit">Tải file</button>
+    </form>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul>
+          {% for msg in messages %}
+            <li><strong>{{ msg }}</strong></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+</body>
+</html>
